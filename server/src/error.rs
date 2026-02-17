@@ -9,6 +9,7 @@ pub enum Error
     InternalServer(String),
 }
 
+//This one is for responses, so we can display it html
 impl axum::response::IntoResponse for Error
 {
     fn into_response(self) -> axum::response::Response
@@ -28,11 +29,15 @@ impl axum::response::IntoResponse for Error
     }
 }
 
+//This one is used for Display the errors in CLI
 impl std::fmt::Display for Error 
 {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result 
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result
     {
-        write!(f, "{}", Error::InternalServer(String::from("SERVER ERROR RAHHHHHH")))
+        match self 
+        {
+            Self::InternalServer(msg) => write!(f, "Error: {}", msg)
+        }
     }
 }
 
