@@ -23,10 +23,30 @@ function stopCapture() {
   videoElem.srcObject = null
 }
 
+async function makeCall() {
+  const configuration = {'iceServers': []}
+  const peerConnection = new RTCPeerConnection(configuration)
+  // socket.addEventListener("message", async (message) => {
+  //   if (message.answer) {
+  //     const remoteDescription = new RTCSessionDescription(message.answer)
+  //     await peerConnection.setRemoteDescription(remoteDescription)
+  //   }
+  // })  
+  const offer = await peerConnection.createOffer()
+  peerConnection.setLocalDescription(offer)
+  const sendPacket = {"offer": offer}
+  socket.send(JSON.stringify(sendPacket))
+}
+
 startBtn.addEventListener("click", (e) => {
   startCapture()
 })
 
 stopBtn.addEventListener("click", (e) => {
   stopCapture()
+})
+
+const socket = new WebSocket("ws://localhost:6969")
+
+socket.addEventListener("open", async (e) => {
 })
