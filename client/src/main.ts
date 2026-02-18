@@ -7,6 +7,8 @@ const displayMediaOptions = {
   audio: false
 }
 
+const socket = new WebSocket("ws://localhost:6969")
+
 async function startCapture() {
   try {
     videoElem.srcObject = await navigator.mediaDevices.getDisplayMedia(displayMediaOptions)
@@ -26,12 +28,15 @@ function stopCapture() {
 async function makeCall() {
   const configuration = {'iceServers': []}
   const peerConnection = new RTCPeerConnection(configuration)
-  // socket.addEventListener("message", async (message) => {
-  //   if (message.answer) {
-  //     const remoteDescription = new RTCSessionDescription(message.answer)
-  //     await peerConnection.setRemoteDescription(remoteDescription)
-  //   }
-  // })  
+  /** Still figuring out the JSON message format.
+    
+    socket.addEventListener("message", async (message) => {
+      if (message.answer) {
+        const remoteDescription = new RTCSessionDescription(message.answer)
+        await peerConnection.setRemoteDescription(remoteDescription)
+      }
+    })  
+   */
   const offer = await peerConnection.createOffer()
   peerConnection.setLocalDescription(offer)
   const sendPacket = {"offer": offer}
@@ -44,9 +49,4 @@ startBtn.addEventListener("click", (e) => {
 
 stopBtn.addEventListener("click", (e) => {
   stopCapture()
-})
-
-const socket = new WebSocket("ws://localhost:6969")
-
-socket.addEventListener("open", async (e) => {
 })
