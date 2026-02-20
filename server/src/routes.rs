@@ -5,17 +5,14 @@ use axum::extract::{Path, State};
 use axum::response::IntoResponse;
 use tokio::sync::mpsc;
 use futures_util::{SinkExt, StreamExt};
-use tracing::{info, debug, error};
+use tracing::{info, error};
 use uuid::Uuid;
 use std::collections::HashMap;
 
 use crate::role::Role;
 use crate::peer::Peer;
-use crate::error::Error;
 use crate::state::{ RoomState, AppState};
 use crate::signal::SignalMessage;
-
-type RouteResult<T> = Result<T, Error>;
 
 async fn health_check() -> impl IntoResponse
 {

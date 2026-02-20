@@ -1908,9 +1908,11 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "tokio-tungstenite",
  "tower-http",
  "tracing",
  "tracing-subscriber",
+ "tungstenite",
  "uuid",
  "webrtc",
 ]
