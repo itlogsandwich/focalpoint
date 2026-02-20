@@ -56,51 +56,57 @@ async fn handle_socket(socket: WebSocket, room_id: String, state: AppState)
             }
         }
     });
-    
-    let first_msg = match ws_receiver.next().await
-    {
-        Some(Ok(Message::Text(txt))) => txt,
-        _ => 
+
+    let role =
+    {    
+        let first_msg = match ws_receiver.next().await
         {
-            error!("Failed to receive message");
-            return;
-        }
-    };
-    
-    let join_msg: SignalMessage = match serde_json::from_str(&first_msg)
-    {
-        Ok(SignalMessage::Join {role}) => SignalMessage::Join {role},
-        _ =>
+            Some(Ok(Message::Text(txt))) => txt,
+            _ => 
+            {
+                error!("Failed to receive message");
+                return;
+            }
+        };
+        
+        let join_msg: SignalMessage = match serde_json::from_str(&first_msg)
         {
-            error!("Invalid Join Message");
-            return;
-        }
-    };
+            Ok(SignalMessage::Join {role}) => SignalMessage::Join {role},
+            _ =>
+            {
+                error!("Invalid Join Message");
+                return;
+            }
+        };
 
-    let mut room = state.rooms.entry(room_id.clone()).or_insert_with(|| RoomState
-    {
-        teacher_id: None,
-        peers: HashMap::new(),
-    });
-
-    let role = match join_msg
-    {
-        SignalMessage::Join {role} => role,
-        _ => unreachable!(),
-    };
-
-    let peer = Peer::new(peer_id, role, tx.clone());
-    
-    match peer.role
-    {
-        Role::Teacher => room.teacher_id = Some(peer.clone()),
-        Role::Student =>
+        let mut room = state.rooms.entry(room_id.clone()).or_insert_with(|| RoomState
         {
-            room.peers.insert(peer_id.to_string(), peer.clone());
-        }
-    }
+            teacher_id: None,
+            peers: HashMap::new(),
+        });
 
-    info!("Peer {:?} Joined Room {:?}", peer_id, room_id);
+        let role = match join_msg
+        {
+            SignalMessage::Join {role} => role,
+            _ => unreachable!(),
+        };
+
+        let peer = Peer::new(peer_id, role.clone(), tx.clone());
+        
+        match peer.role
+        {
+            Role::Teacher => room.teacher_id = Some(peer.clone()),
+            Role::Student =>
+            {
+                room.peers.insert(peer_id.to_string(), peer.clone());
+            }
+        };
+
+        info!("Peer {:?} Joined Room {:?}", peer_id, room_id);
+
+        role
+    };
+
 
     while let Some(msg) = ws_receiver.next().await
     {
@@ -118,7 +124,7 @@ async fn handle_socket(socket: WebSocket, room_id: String, state: AppState)
                     }
                 };
 
-                handle_signal(signal, &peer, &room).await;
+                handle_signal(signal, &room_id, peer_id, &state).await;
             },
 
             Ok(Message::Close(_)) | Err(_) => 
@@ -129,38 +135,18 @@ async fn handle_socket(socket: WebSocket, room_id: String, state: AppState)
             _ => {},
         }
     }
-
-    info!("Peer {:?} disconnected", peer_id);
-
-    match peer.role
-    {
-        Role::Teacher => 
-        {
-            if let Some(room) = state.rooms.remove(&room_id) 
-            {
-                for(_, student_peer) in room.1.peers
-                {
-                    let _ = student_peer.sender_channel.send(Message::Close(
-                        Some(CloseFrame 
-                        {
-                            code: 1000,
-                            reason: "Teacher has left the room".into(),
-                        })));
-                }
-            }
-        }
-        Role::Student =>
-        {
-            if let Some(mut room) = state.rooms.get_mut(&room_id)
-            {
-                room.peers.remove(&peer_id.to_string());
-            }
-        }
-    }
+    
+    cleanup_peer(&state, &room_id, peer_id, role).await;
 }
 
-async fn handle_signal(signal: SignalMessage, sender_peer: &Peer, room: &RoomState)
+async fn handle_signal(signal: SignalMessage, room_id: &str, sender_id: Uuid, state: &AppState)
 {
+    let room = match state.rooms.get(room_id)
+    {
+        Some(room) => room,
+        None => return,
+    };
+
     match signal
     {
         SignalMessage::Offer {sdp, ..} => 
@@ -182,7 +168,7 @@ async fn handle_signal(signal: SignalMessage, sender_peer: &Peer, room: &RoomSta
         {
             let student = &room.peers[&target];
 
-            if let Ok(txt) = serde_json::to_string(&SignalMessage::Answer { sdp, target_id: Some(sender_peer.id.to_string()) })
+            if let Ok(txt) = serde_json::to_string(&SignalMessage::Answer { sdp, target_id: Some(sender_id.to_string()) })
             {
                 let _ = student.sender_channel.send(Message::Text(txt.into()));
             } 
@@ -196,7 +182,7 @@ async fn handle_signal(signal: SignalMessage, sender_peer: &Peer, room: &RoomSta
         {
             let peer = room.teacher_id.as_ref().filter(|teacher| teacher.id.to_string() == target).expect("Peer not found for ICE candidacy");
 
-            if let Ok(txt) = serde_json::to_string(&SignalMessage::Ice { candidate, target_id: Some(sender_peer.id.to_string()), })
+            if let Ok(txt) = serde_json::to_string(&SignalMessage::Ice { candidate, target_id: Some(sender_id.to_string()), })
             {
                 let _ = peer.sender_channel.send(Message::Text(txt.into()));
             }
@@ -208,5 +194,46 @@ async fn handle_signal(signal: SignalMessage, sender_peer: &Peer, room: &RoomSta
         },
 
         _ => {},
+    }
+}
+
+async fn cleanup_peer(state: &AppState, room_id: &str, peer_id: Uuid, role: Role)
+{
+    match role
+    {
+        Role::Teacher => 
+        {
+            if let Some((_, room)) = state.rooms.remove(room_id) 
+            {
+                info!("Teacher has left the room, closing... {room_id}");
+
+                for student in room.peers.values()
+                {
+                    let _ = student.sender_channel.send(Message::Close(
+                        Some(CloseFrame 
+                        {
+                            code: 1000,
+                            reason: "Teacher has left the room".into(),
+                        })));
+                }
+            }
+        }
+        Role::Student =>
+        {
+            if let Some(mut room) = state.rooms.get_mut(room_id)
+            {
+                room.peers.remove(&peer_id.to_string());
+                info!("Student {} has left room: {}", peer_id, room_id);
+
+                let is_empty = room.peers.is_empty() && room.teacher_id.is_none();
+
+                if is_empty
+                {
+                    drop(room);
+                    state.rooms.remove(room_id);
+                    info!("Closing room...{room_id}...");
+                }
+            }
+        }
     }
 }
