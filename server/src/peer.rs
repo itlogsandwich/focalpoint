@@ -11,3 +11,16 @@ pub struct Peer
     pub role: Role,
     pub sender_channel: mpsc::UnboundedSender<Message>,
 }
+
+impl Peer 
+{
+    pub fn new(id: Uuid, role: Role, sender_channel: mpsc::UnboundedSender<Message>) -> Self
+    {
+        Self
+        {
+            id,
+            role,
+            sender_channel,
+        }
+    }
+}

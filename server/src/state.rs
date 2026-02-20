@@ -1,6 +1,5 @@
 use std::sync::Arc;
 use dashmap::DashMap;
-use tokio::sync::broadcast;
 use std::collections::HashMap;
 
 use crate::peer::Peer;
